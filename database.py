@@ -126,3 +126,11 @@ async def get_stats():
         "total_messages": total_messages,
         "total_banned": total_banned
     }
+
+async def get_all_copies(original_user_id: int, original_message_id: int):
+    """Bir orijinal mesajın kopyalandığı tüm hedefleri (target_user_id, target_message_id) listeler."""
+    cursor = messages_collection.find({
+        "original_user_id": original_user_id,
+        "original_message_id": original_message_id
+    })
+    return await cursor.to_list(length=None)

@@ -3,7 +3,8 @@ from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import Command
 import config
-from database import get_message_info, get_stats, ban_user, unban_user
+from database import get_message_info, get_stats, ban_user, unban_user, get_all_copies
+from aiogram.exceptions import TelegramBadRequest
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -87,3 +88,38 @@ async def cmd_unban(message: Message):
         await message.answer(f"✅ <code>{user_id}</code> ID'li kullanıcının yasağı kaldırıldı.")
     else:
         await message.answer("Kullanım: <code>/unban &lt;user_id&gt;</code>")
+
+@router.message(Command("sil"), F.func(is_admin))
+async def cmd_sil(message: Message):
+    """Yanıt verilen mesajı herkesin (aktif kullanıcıların) sohbetinden siler."""
+    if not message.reply_to_message:
+        await message.answer("Lütfen silmek istediğiniz mesaja yanıt vererek <code>/sil</code> yazın.")
+        return
+        
+    target_msg_id = message.reply_to_message.message_id
+    author_info = await get_message_info(message.from_user.id, target_msg_id)
+    
+    if not author_info:
+        await message.answer("Bu mesajın veritabanı kaydı bulunamadı (Zaten silinmiş veya eski olabilir).")
+        return
+        
+    original_user_id = author_info["original_user_id"]
+    original_message_id = author_info["original_message_id"]
+    
+    copies = await get_all_copies(original_user_id, original_message_id)
+    
+    deleted_count = 0
+    for copy in copies:
+        try:
+            await message.bot.delete_message(
+                chat_id=copy["target_user_id"],
+                message_id=copy["target_message_id"]
+            )
+            deleted_count += 1
+        except TelegramBadRequest:
+            # Mesaj çoktan silinmiş olabilir (veya 48 saatten eski)
+            pass
+        except Exception as e:
+            logger.error(f"Mesaj silinirken hata: {e}")
+            
+    await message.answer(f"✅ Mesaj başarıyla <b>{deleted_count}</b> sohbetten silindi.")
