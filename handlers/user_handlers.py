@@ -37,6 +37,11 @@ async def handle_user_message(message: Message):
     if not is_allowed:
         return
 
+    # Komutların (/start, /stats vb.) başkalarına gitmesini engelle
+    raw_text_for_check = message.text or message.caption or ""
+    if raw_text_for_check.startswith("/"):
+        return
+
     active_users = await get_active_users()
     target_users = [uid for uid in active_users if uid != user.id]
     
