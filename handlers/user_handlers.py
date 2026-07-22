@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import html
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import CommandStart
@@ -75,6 +76,12 @@ async def handle_user_message(message: Message):
         is_admin_broadcast = True
         html_text = message.html_text or ""
         modified_html = html_text.replace("~", "", 1).strip() + "\n\n<b>Admin</b>"
+    else:
+        # Admin değilse veya ~ kullanmamışsa, tüm formatları (kalın, italik vb.) temizle
+        if raw_text:
+            modified_html = html.escape(raw_text)
+        else:
+            modified_html = None
 
     # Her bir kullanıcıya mesajı ilet
     for target_id in target_users:
@@ -90,24 +97,18 @@ async def handle_user_message(message: Message):
                     target_user_id=target_id
                 )
             
-            # Mesajı kopyala (eğer reply_to_id varsa o mesaja yanıt olarak gider)
-            if is_admin_broadcast:
-                if message.content_type == 'text':
-                    copied_msg = await message.bot.send_message(
-                        chat_id=target_id,
-                        text=modified_html,
-                        reply_to_message_id=reply_to_id
-                    )
-                else:
-                    copied_msg = await message.copy_to(
-                        chat_id=target_id,
-                        reply_to_message_id=reply_to_id,
-                        caption=modified_html
-                    )
+            # Mesajı kopyala veya yeni metinle gönder
+            if message.content_type == 'text':
+                copied_msg = await message.bot.send_message(
+                    chat_id=target_id,
+                    text=modified_html,
+                    reply_to_message_id=reply_to_id
+                )
             else:
                 copied_msg = await message.copy_to(
                     chat_id=target_id,
-                    reply_to_message_id=reply_to_id
+                    reply_to_message_id=reply_to_id,
+                    caption=modified_html
                 )
             
             # Kopyalanan yeni mesajı veritabanına logla
