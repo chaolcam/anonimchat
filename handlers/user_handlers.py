@@ -23,10 +23,9 @@ async def cmd_start(message: Message):
         return
 
     await message.answer(
-        "👋 Secret Lounge'a hoş geldin!\n\n"
+        "👋 <b>Anonim Sohbet Botuna Hoşgeldin!</b>\n\n"
         "Buraya yazdığın (veya gönderdiğin fotoğraf/video gibi) her şey "
-        "diğer tüm üyelere **tamamen anonim** olarak iletilecektir.\n"
-        "Eğer bir mesaja yanıt (reply) verirsen, o yanıt diğerlerinde de düzgün şekilde gözükecektir!\n"
+        "diğer tüm üyelere <b>tamamen anonim</b> olarak iletilecektir.\n"
         "İyi sohbetler! 🤫"
     )
 

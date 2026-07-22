@@ -41,13 +41,13 @@ async def cmd_kim(message: Message):
         tarih = author_info['timestamp'].strftime("%Y-%m-%d %H:%M:%S UTC")
         
         text = (
-            f"🔍 **Mesaj Sahibi Bilgileri**\n\n"
+            f"🔍 <b>Mesaj Sahibi Bilgileri</b>\n\n"
             f"👤 İsim: {full_name}\n"
             f"🔗 Username: {username_text}\n"
-            f"🆔 User ID: `{user_id}`\n"
+            f"🆔 User ID: <code>{user_id}</code>\n"
             f"🕒 Zaman: {tarih}"
         )
-        await message.answer(text, parse_mode="Markdown")
+        await message.answer(text)
     else:
         await message.answer("Bu mesaja ait log bulunamadı. (Sistemden önce atılmış veya silinmiş olabilir)")
 
@@ -57,13 +57,13 @@ async def cmd_stats(message: Message):
     """Sistem istatistiklerini gösterir."""
     stats = await get_stats()
     text = (
-        f"📊 **Sistem İstatistikleri**\n\n"
+        f"📊 <b>Sistem İstatistikleri</b>\n\n"
         f"👥 Toplam Kullanıcı: {stats['total_users']}\n"
         f"🟢 Aktif Kullanıcı: {stats['active_users']}\n"
         f"💬 Loglanan Mesaj: {stats['total_messages']}\n"
         f"🚫 Banlı Kullanıcı: {stats['total_banned']}"
     )
-    await message.answer(text, parse_mode="Markdown")
+    await message.answer(text)
 
 
 @router.message(Command("ban"), F.func(is_admin))
@@ -73,9 +73,9 @@ async def cmd_ban(message: Message):
     if len(args) > 1 and args[1].isdigit():
         user_id = int(args[1])
         await ban_user(user_id, reason="Admin tarafından yasaklandı")
-        await message.answer(f"✅ `{user_id}` ID'li kullanıcı yasaklandı.", parse_mode="Markdown")
+        await message.answer(f"✅ <code>{user_id}</code> ID'li kullanıcı yasaklandı.")
     else:
-        await message.answer("Kullanım: `/ban <user_id>`", parse_mode="Markdown")
+        await message.answer("Kullanım: <code>/ban &lt;user_id&gt;</code>")
 
 @router.message(Command("unban"), F.func(is_admin))
 async def cmd_unban(message: Message):
@@ -84,6 +84,6 @@ async def cmd_unban(message: Message):
     if len(args) > 1 and args[1].isdigit():
         user_id = int(args[1])
         await unban_user(user_id)
-        await message.answer(f"✅ `{user_id}` ID'li kullanıcının yasağı kaldırıldı.", parse_mode="Markdown")
+        await message.answer(f"✅ <code>{user_id}</code> ID'li kullanıcının yasağı kaldırıldı.")
     else:
-        await message.answer("Kullanım: `/unban <user_id>`", parse_mode="Markdown")
+        await message.answer("Kullanım: <code>/unban &lt;user_id&gt;</code>")
