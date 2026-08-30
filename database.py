@@ -18,6 +18,10 @@ async def init_db():
     await users_collection.create_index("user_id", unique=True)
     # Her kullanıcının kendi sohbetindeki mesaj id'si o chat için benzersizdir
     await messages_collection.create_index([("target_user_id", 1), ("target_message_id", 1)], unique=True)
+    
+    # 1 haftadan (604800 saniye) eski mesajları MongoDB'nin otomatik silmesi için TTL index
+    await messages_collection.create_index("timestamp", expireAfterSeconds=604800)
+    
     await bans_collection.create_index("user_id", unique=True)
     logger.info("MongoDB indexleri güncellendi.")
 
