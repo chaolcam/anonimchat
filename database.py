@@ -16,8 +16,9 @@ bans_collection = db['bans']
 async def init_db():
     """Veritabanı indekslerini oluşturur."""
     await users_collection.create_index("user_id", unique=True)
-    # Her kullanıcının kendi sohbetindeki mesaj id'si o chat için benzersizdir
-    await messages_collection.create_index([("target_user_id", 1), ("target_message_id", 1)], unique=True)
+    # Yeni yapıya göre indeksler (dizi içindeki verilere hızlı erişim)
+    await messages_collection.create_index([("targets.user_id", 1), ("targets.msg_id", 1)])
+    await messages_collection.create_index([("original_user_id", 1), ("original_message_id", 1)], unique=True)
     
     # 1 haftadan (604800 saniye) eski mesajları MongoDB'nin otomatik silmesi için TTL index
     await messages_collection.create_index("timestamp", expireAfterSeconds=604800)
@@ -60,24 +61,47 @@ async def get_active_users():
 
 async def log_message(original_user_id: int, original_message_id: int, target_user_id: int, target_message_id: int, content_type: str):
     """
-    Gönderilen her kopyayı ve asıl mesajı veritabanına loglar.
-    original_*: Mesajı atan kişi ve o kişinin kendi chatindeki mesaj ID'si
-    target_*: Mesajın iletildiği kişi ve o kişinin chatinde oluşan yeni mesajın ID'si
+    Gönderilen mesajı veritabanına loglar. Orijinal mesaja ait tek bir döküman (JSON) tutulur 
+    ve diğer hedefler (targets) dizisine eklenir.
     """
-    await messages_collection.insert_one({
-        "original_user_id": original_user_id,
-        "original_message_id": original_message_id,
-        "target_user_id": target_user_id,
-        "target_message_id": target_message_id,
-        "content_type": content_type,
-        "timestamp": datetime.now(timezone.utc)
-    })
+    await messages_collection.update_one(
+        {
+            "original_user_id": original_user_id,
+            "original_message_id": original_message_id
+        },
+        {
+            "$setOnInsert": {
+                "content_type": content_type,
+                "timestamp": datetime.now(timezone.utc)
+            },
+            "$push": {
+                "targets": {
+                    "user_id": target_user_id,
+                    "msg_id": target_message_id
+                }
+            }
+        },
+        upsert=True
+    )
 
 async def get_message_info(target_user_id: int, target_message_id: int):
     """Bir kullanıcının sohbetindeki bir mesajın kimden geldiğini bulur."""
+    # Eski formattaki mesajları da bulabilmesi için $or kullanıyoruz
     msg = await messages_collection.find_one({
-        "target_user_id": target_user_id,
-        "target_message_id": target_message_id
+        "$or": [
+            {
+                "targets": {
+                    "$elemMatch": {
+                        "user_id": target_user_id,
+                        "msg_id": target_message_id
+                    }
+                }
+            },
+            {
+                "target_user_id": target_user_id,
+                "target_message_id": target_message_id
+            }
+        ]
     })
     if msg:
         user = await users_collection.find_one({"user_id": msg["original_user_id"]})
@@ -95,13 +119,25 @@ async def get_target_message_id(original_user_id: int, original_message_id: int,
     Belirli bir orijinal mesajın (örn: Ali'nin 100 ID'li mesajı), 
     diğer kullanıcının (örn: Ayşe) sohbetinde hangi ID'ye sahip olduğunu bulur (reply yapabilmek için).
     """
+    # Önce yeni formatta veya eski formatta dokümanı bulalım
     msg = await messages_collection.find_one({
         "original_user_id": original_user_id,
         "original_message_id": original_message_id,
-        "target_user_id": target_user_id
+        "$or": [
+            {"targets.user_id": target_user_id},
+            {"target_user_id": target_user_id}
+        ]
     })
+    
     if msg:
-        return msg["target_message_id"]
+        # Eski format (hedef direkt ana belgedeyse)
+        if "target_message_id" in msg and msg.get("target_user_id") == target_user_id:
+            return msg["target_message_id"]
+            
+        # Yeni format (hedef targets dizisindeyse)
+        for t in msg.get("targets", []):
+            if t["user_id"] == target_user_id:
+                return t["msg_id"]
     return None
 
 async def ban_user(user_id: int, reason: str = ""):
@@ -133,11 +169,38 @@ async def get_stats():
 
 async def get_all_copies(original_user_id: int, original_message_id: int):
     """Bir orijinal mesajın kopyalandığı tüm hedefleri (target_user_id, target_message_id) listeler."""
+    # 1. Eski formattaki ayrı ayrı belgeleri bulalım
     cursor = messages_collection.find({
         "original_user_id": original_user_id,
-        "original_message_id": original_message_id
+        "original_message_id": original_message_id,
+        "target_user_id": {"$exists": True}
     })
-    return await cursor.to_list(length=None)
+    old_copies_docs = await cursor.to_list(length=None)
+    
+    # 2. Yeni formattaki tek belgeyi bulalım
+    new_doc = await messages_collection.find_one({
+        "original_user_id": original_user_id,
+        "original_message_id": original_message_id,
+        "targets": {"$exists": True}
+    })
+    
+    results = []
+    # Eski kayıtları listeye ekle
+    for doc in old_copies_docs:
+        results.append({
+            "target_user_id": doc["target_user_id"],
+            "target_message_id": doc["target_message_id"]
+        })
+        
+    # Yeni kayıtları listeye ekle
+    if new_doc:
+        for t in new_doc.get("targets", []):
+            results.append({
+                "target_user_id": t["user_id"],
+                "target_message_id": t["msg_id"]
+            })
+            
+    return results
 
 async def get_top_users(limit: int = 10):
     """En çok mesaj atan kullanıcıları sıralar."""
