@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import html
+import re
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import CommandStart
@@ -42,6 +43,17 @@ async def handle_user_message(message: Message):
     raw_text_for_check = message.text or message.caption or ""
     if raw_text_for_check.startswith("/"):
         return
+
+    # Referans linki kontrolü (Adminler hariç)
+    if user.id not in config.ADMIN_IDS:
+        ref_pattern = r"(t\.me|telegram\.me)/[^\s]+[\?&](start|startapp|startbot|ref|referans|başlat|baslat)($|=|&)"
+        if re.search(ref_pattern, raw_text_for_check, re.IGNORECASE):
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            await message.answer("❗ Referans linki paylaşmak yasaktır, mesajınız iletilmemiştir.")
+            return
 
     active_users = await get_active_users()
     target_users = [uid for uid in active_users if uid != user.id]

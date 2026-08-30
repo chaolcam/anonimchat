@@ -3,7 +3,7 @@ from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import Command
 import config
-from database import get_message_info, get_stats, ban_user, unban_user, get_all_copies
+from database import get_message_info, get_stats, ban_user, unban_user, get_all_copies, get_top_users
 from aiogram.exceptions import TelegramBadRequest
 
 router = Router()
@@ -123,3 +123,23 @@ async def cmd_sil(message: Message):
             logger.error(f"Mesaj silinirken hata: {e}")
             
     await message.answer(f"✅ Mesaj başarıyla <b>{deleted_count}</b> sohbetten silindi.")
+
+@router.message(Command("info"), F.func(is_admin))
+async def cmd_info(message: Message):
+    """En çok mesaj atan top 10 kullanıcıyı listeler."""
+    top_users = await get_top_users(limit=10)
+    
+    if not top_users:
+        await message.answer("Henüz mesaj atan kullanıcı yok.")
+        return
+        
+    text = "🏆 <b>En Çok Mesaj Atan Top 10 Kullanıcı</b>\n\n"
+    for i, user in enumerate(top_users, 1):
+        username = f"@{user['username']}" if user.get("username") else "Yok"
+        full_name = user.get("full_name", "Bilinmeyen")
+        count = user.get("message_count", 0)
+        
+        text += f"{i}. <b>{full_name}</b> ({username})\n"
+        text += f"   └ 📝 Mesaj: {count}\n"
+        
+    await message.answer(text)

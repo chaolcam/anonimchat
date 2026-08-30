@@ -134,3 +134,53 @@ async def get_all_copies(original_user_id: int, original_message_id: int):
         "original_message_id": original_message_id
     })
     return await cursor.to_list(length=None)
+
+async def get_top_users(limit: int = 10):
+    """En çok mesaj atan kullanıcıları sıralar."""
+    pipeline = [
+        {
+            "$group": {
+                "_id": {
+                    "user_id": "$original_user_id",
+                    "msg_id": "$original_message_id"
+                }
+            }
+        },
+        {
+            "$group": {
+                "_id": "$_id.user_id",
+                "message_count": {"$sum": 1}
+            }
+        },
+        {
+            "$sort": {"message_count": -1}
+        },
+        {
+            "$limit": limit
+        },
+        {
+            "$lookup": {
+                "from": "users",
+                "localField": "_id",
+                "foreignField": "user_id",
+                "as": "user_info"
+            }
+        },
+        {
+            "$unwind": {
+                "path": "$user_info",
+                "preserveNullAndEmptyArrays": True
+            }
+        },
+        {
+            "$project": {
+                "user_id": "$_id",
+                "message_count": 1,
+                "full_name": {"$ifNull": ["$user_info.full_name", "Bilinmeyen"]},
+                "username": "$user_info.username"
+            }
+        }
+    ]
+    
+    cursor = messages_collection.aggregate(pipeline)
+    return await cursor.to_list(length=limit)
