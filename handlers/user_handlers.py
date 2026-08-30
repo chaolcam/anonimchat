@@ -10,6 +10,7 @@ from database import (
     add_or_update_user, get_active_users, log_message, 
     set_user_inactive, get_message_info, get_target_message_id
 )
+from broadcast_manager import send_to_user_safely
 import config
 
 router = Router()
@@ -95,44 +96,15 @@ async def handle_user_message(message: Message):
         else:
             modified_html = None
 
-    # Her bir kullanıcıya mesajı ilet
+    # Her bir kullanıcıya mesajı arka planda (asenkron kilitlerle) ilet
     for target_id in target_users:
-        try:
-            # Eğer yanıt verilen bir mesaj varsa, o kullanıcının (target_id) sohbetinde 
-            # o mesajın hangi ID'ye denk geldiğini bulmamız lazım.
-            reply_to_id = None
-            if replied_info:
-                # Orijinal mesajın target_id kullanıcısındaki kopyasının ID'sini bul
-                reply_to_id = await get_target_message_id(
-                    original_user_id=replied_info["original_user_id"],
-                    original_message_id=replied_info["original_message_id"],
-                    target_user_id=target_id
-                )
-            
-            # Mesajı kopyala veya yeni metinle gönder
-            if message.content_type == 'text':
-                copied_msg = await message.bot.send_message(
-                    chat_id=target_id,
-                    text=modified_html,
-                    reply_to_message_id=reply_to_id
-                )
-            else:
-                copied_msg = await message.copy_to(
-                    chat_id=target_id,
-                    reply_to_message_id=reply_to_id,
-                    caption=modified_html
-                )
-            
-            # Kopyalanan yeni mesajı veritabanına logla
-            await log_message(
-                original_user_id=user.id,
-                original_message_id=message.message_id,
-                target_user_id=target_id,
-                target_message_id=copied_msg.message_id,
-                content_type=message.content_type
+        asyncio.create_task(
+            send_to_user_safely(
+                bot=message.bot,
+                target_id=target_id,
+                user_id=user.id,
+                original_message=message,
+                replied_info=replied_info,
+                modified_html=modified_html
             )
-            
-        except TelegramForbiddenError:
-            await set_user_inactive(target_id)
-        except Exception as e:
-            logger.error(f"{target_id} ID'li kullanıcıya mesaj iletilemedi: {e}")
+        )
