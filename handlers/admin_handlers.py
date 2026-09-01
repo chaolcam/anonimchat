@@ -129,29 +129,14 @@ async def cmd_sil(message: Message):
     
     copies = await get_all_copies(original_user_id, original_message_id)
     
-    deleted_count = 0
-    for copy in copies:
-        try:
-            await message.bot.delete_message(
-                chat_id=copy["target_user_id"],
-                message_id=copy["target_message_id"]
-            )
-            deleted_count += 1
-        except TelegramBadRequest:
-            # Mesaj çoktan silinmiş olabilir (veya 48 saatten eski)
-            pass
-        except Exception as e:
-            logger.error(f"Mesaj silinirken hata: {e}")
-            
-    await message.answer(f"✅ Mesaj başarıyla <b>{deleted_count}</b> sohbetten silindi.")
-    
-    # Log Grubuna Bildir
+    # Mesajları silmeden ÖNCE Log Grubuna kopyalayalım
+    # Aksi takdirde mesaj silindiği için copy_message hata verir.
     if config.LOG_GROUP_ID:
         try:
             admin_name = message.from_user.full_name or "Yetkili"
             actor = "Admin" if message.from_user.id in config.ADMIN_IDS else "Moderatör"
             
-            # İçeriği kopyala (orijinal mesaj)
+            # İçeriği kopyala (orijinal mesaj henüz silinmedi)
             await message.bot.copy_message(
                 chat_id=config.LOG_GROUP_ID,
                 from_chat_id=original_user_id,
@@ -169,6 +154,22 @@ async def cmd_sil(message: Message):
             await message.bot.send_message(chat_id=config.LOG_GROUP_ID, text=log_text)
         except Exception as e:
             logger.error(f"Log grubuna silinme bilgisi atılamadı: {e}")
+
+    deleted_count = 0
+    for copy in copies:
+        try:
+            await message.bot.delete_message(
+                chat_id=copy["target_user_id"],
+                message_id=copy["target_message_id"]
+            )
+            deleted_count += 1
+        except TelegramBadRequest:
+            # Mesaj çoktan silinmiş olabilir (veya 48 saatten eski)
+            pass
+        except Exception as e:
+            logger.error(f"Mesaj silinirken hata: {e}")
+            
+    await message.answer(f"✅ Mesaj başarıyla <b>{deleted_count}</b> sohbetten silindi.")
 
 @router.message(Command("info"), F.func(is_admin))
 async def cmd_info(message: Message):
