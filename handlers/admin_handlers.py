@@ -3,7 +3,10 @@ from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import Command
 import config
-from database import get_message_info, get_stats, ban_user, unban_user, get_all_copies, get_top_users
+from database import (
+    get_message_info, get_stats, ban_user, unban_user, get_all_copies, get_top_users,
+    is_moderator, add_moderator, remove_moderator
+)
 from aiogram.exceptions import TelegramBadRequest
 
 router = Router()
@@ -13,7 +16,12 @@ logger = logging.getLogger(__name__)
 def is_admin(message: Message) -> bool:
     return message.from_user.id in config.ADMIN_IDS
 
-@router.message(Command("kim"), F.func(is_admin))
+async def is_admin_or_mod(message: Message) -> bool:
+    if message.from_user.id in config.ADMIN_IDS:
+        return True
+    return await is_moderator(message.from_user.id)
+
+@router.message(Command("kim"), F.func(is_admin_or_mod))
 async def cmd_kim(message: Message):
     """
     Bir mesaja yanıt verip (reply) /kim yazarak veya '/kim <id>' yazarak mesajın sahibini bulur.
@@ -53,7 +61,7 @@ async def cmd_kim(message: Message):
         await message.answer("Bu mesaja ait log bulunamadı. (Sistemden önce atılmış veya silinmiş olabilir)")
 
 
-@router.message(Command("stats"), F.func(is_admin))
+@router.message(Command("stats"), F.func(is_admin_or_mod))
 async def cmd_stats(message: Message):
     """Sistem istatistiklerini gösterir."""
     stats = await get_stats()
@@ -67,7 +75,7 @@ async def cmd_stats(message: Message):
     await message.answer(text)
 
 
-@router.message(Command("ban"), F.func(is_admin))
+@router.message(Command("ban"), F.func(is_admin_or_mod))
 async def cmd_ban(message: Message):
     """Kullanıcıyı sistemden uzaklaştırır. Kullanım: /ban <user_id>"""
     args = message.text.split()
@@ -75,10 +83,23 @@ async def cmd_ban(message: Message):
         user_id = int(args[1])
         await ban_user(user_id, reason="Admin tarafından yasaklandı")
         await message.answer(f"✅ <code>{user_id}</code> ID'li kullanıcı yasaklandı.")
+        
+        if config.LOG_GROUP_ID:
+            actor = "Admin" if message.from_user.id in config.ADMIN_IDS else "Moderatör"
+            admin_name = message.from_user.full_name or "Yetkili"
+            log_text = (
+                f"🚫 <b>Kullanıcı Banlandı</b>\n\n"
+                f"👤 Banlayan: {admin_name} ({actor}) - <code>{message.from_user.id}</code>\n"
+                f"🎯 Banlanan User ID: <code>{user_id}</code>"
+            )
+            try:
+                await message.bot.send_message(chat_id=config.LOG_GROUP_ID, text=log_text)
+            except Exception as e:
+                logger.error(f"Log grubuna ban bilgisi atılamadı: {e}")
     else:
         await message.answer("Kullanım: <code>/ban &lt;user_id&gt;</code>")
 
-@router.message(Command("unban"), F.func(is_admin))
+@router.message(Command("unban"), F.func(is_admin_or_mod))
 async def cmd_unban(message: Message):
     """Kullanıcının yasağını kaldırır. Kullanım: /unban <user_id>"""
     args = message.text.split()
@@ -89,7 +110,7 @@ async def cmd_unban(message: Message):
     else:
         await message.answer("Kullanım: <code>/unban &lt;user_id&gt;</code>")
 
-@router.message(Command("sil"), F.func(is_admin))
+@router.message(Command("sil"), F.func(is_admin_or_mod))
 async def cmd_sil(message: Message):
     """Yanıt verilen mesajı herkesin (aktif kullanıcıların) sohbetinden siler."""
     if not message.reply_to_message:
@@ -123,6 +144,31 @@ async def cmd_sil(message: Message):
             logger.error(f"Mesaj silinirken hata: {e}")
             
     await message.answer(f"✅ Mesaj başarıyla <b>{deleted_count}</b> sohbetten silindi.")
+    
+    # Log Grubuna Bildir
+    if config.LOG_GROUP_ID:
+        try:
+            admin_name = message.from_user.full_name or "Yetkili"
+            actor = "Admin" if message.from_user.id in config.ADMIN_IDS else "Moderatör"
+            
+            # İçeriği kopyala (orijinal mesaj)
+            await message.bot.copy_message(
+                chat_id=config.LOG_GROUP_ID,
+                from_chat_id=original_user_id,
+                message_id=original_message_id
+            )
+            
+            author_name = author_info.get("full_name") or "Bilinmeyen"
+            # Bilgi mesajı
+            log_text = (
+                f"🗑️ <b>Mesaj Silindi</b>\n\n"
+                f"👤 Silen: {admin_name} ({actor}) - <code>{message.from_user.id}</code>\n"
+                f"🎯 Silinen Mesajın Sahibi: {author_name} - <code>{original_user_id}</code>\n\n"
+                f"Yukarıdaki mesaj sistemden silindi."
+            )
+            await message.bot.send_message(chat_id=config.LOG_GROUP_ID, text=log_text)
+        except Exception as e:
+            logger.error(f"Log grubuna silinme bilgisi atılamadı: {e}")
 
 @router.message(Command("info"), F.func(is_admin))
 async def cmd_info(message: Message):
@@ -143,3 +189,31 @@ async def cmd_info(message: Message):
         text += f"   └ 📝 Mesaj: {count}\n"
         
     await message.answer(text)
+
+@router.message(Command("mod"), F.func(is_admin))
+async def cmd_mod(message: Message):
+    """Sadece log grubunda admin tarafından birini moderatör yapmak için kullanılır."""
+    if not config.LOG_GROUP_ID or message.chat.id != config.LOG_GROUP_ID:
+        return
+        
+    args = message.text.split()
+    if len(args) > 1 and args[1].isdigit():
+        user_id = int(args[1])
+        await add_moderator(user_id)
+        await message.answer(f"✅ <code>{user_id}</code> ID'li kullanıcı başarıyla Moderatör yapıldı.")
+    else:
+        await message.answer("Kullanım: <code>/mod &lt;user_id&gt;</code>")
+
+@router.message(Command("unmod"), F.func(is_admin))
+async def cmd_unmod(message: Message):
+    """Sadece log grubunda admin tarafından birini moderatörlükten çıkarmak için kullanılır."""
+    if not config.LOG_GROUP_ID or message.chat.id != config.LOG_GROUP_ID:
+        return
+        
+    args = message.text.split()
+    if len(args) > 1 and args[1].isdigit():
+        user_id = int(args[1])
+        await remove_moderator(user_id)
+        await message.answer(f"✅ <code>{user_id}</code> ID'li kullanıcı moderatörlükten çıkarıldı.")
+    else:
+        await message.answer("Kullanım: <code>/unmod &lt;user_id&gt;</code>")

@@ -8,7 +8,8 @@ from aiogram.filters import CommandStart
 from aiogram.exceptions import TelegramForbiddenError
 from database import (
     add_or_update_user, get_active_users, log_message, 
-    set_user_inactive, get_message_info, get_target_message_id
+    set_user_inactive, get_message_info, get_target_message_id,
+    is_moderator
 )
 from broadcast_manager import send_to_user_safely
 import config
@@ -45,8 +46,12 @@ async def handle_user_message(message: Message):
     if raw_text_for_check.startswith("/"):
         return
 
-    # Referans linki kontrolü (Adminler hariç)
-    if user.id not in config.ADMIN_IDS:
+    # Admin ve Mod kontrolü
+    is_admin = user.id in config.ADMIN_IDS
+    is_mod = await is_moderator(user.id)
+
+    # Referans linki kontrolü (Adminler ve Modlar hariç)
+    if not is_admin and not is_mod:
         ref_pattern = r"(t\.me|telegram\.me)/[^\s]+[\?&](start|startapp|startbot|ref|referans|başlat|baslat)($|=|&)"
         if re.search(ref_pattern, raw_text_for_check, re.IGNORECASE):
             try:
@@ -78,17 +83,16 @@ async def handle_user_message(message: Message):
     if message.reply_to_message:
         replied_info = await get_message_info(user.id, message.reply_to_message.message_id)
 
-    # Admin broadcast kontrolü
-    is_admin = user.id in config.ADMIN_IDS
     raw_text = message.text or message.caption or ""
     
     is_admin_broadcast = False
     modified_html = None
     
-    if is_admin and raw_text.startswith("~"):
+    if (is_admin or is_mod) and raw_text.startswith("~"):
         is_admin_broadcast = True
         html_text = message.html_text or ""
-        modified_html = html_text.replace("~", "", 1).strip() + "\n\n<b>Admin</b>"
+        tag = "Admin" if is_admin else "Moderatör"
+        modified_html = html_text.replace("~", "", 1).strip() + f"\n\n<b>{tag}</b>"
     else:
         # Admin değilse veya ~ kullanmamışsa, tüm formatları (kalın, italik vb.) temizle
         if raw_text:

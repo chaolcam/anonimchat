@@ -12,6 +12,7 @@ db = client['secret_lounge_db']
 users_collection = db['users']
 messages_collection = db['messages']
 bans_collection = db['bans']
+moderators_collection = db['moderators']
 
 async def init_db():
     """Veritabanı indekslerini oluşturur."""
@@ -24,6 +25,7 @@ async def init_db():
     await messages_collection.create_index("timestamp", expireAfterSeconds=604800)
     
     await bans_collection.create_index("user_id", unique=True)
+    await moderators_collection.create_index("user_id", unique=True)
     logger.info("MongoDB indexleri güncellendi.")
 
 async def add_or_update_user(user_id: int, username: str, full_name: str):
@@ -251,3 +253,31 @@ async def get_top_users(limit: int = 10):
     
     cursor = messages_collection.aggregate(pipeline)
     return await cursor.to_list(length=limit)
+
+async def add_moderator(user_id: int) -> bool:
+    """Moderatör ekler."""
+    try:
+        await moderators_collection.update_one(
+            {"user_id": user_id},
+            {"$set": {"added_at": datetime.now(timezone.utc)}},
+            upsert=True
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Moderatör eklenirken hata: {e}")
+        return False
+
+async def remove_moderator(user_id: int) -> bool:
+    """Moderatör siler."""
+    try:
+        result = await moderators_collection.delete_one({"user_id": user_id})
+        return result.deleted_count > 0
+    except Exception as e:
+        logger.error(f"Moderatör silinirken hata: {e}")
+        return False
+
+async def is_moderator(user_id: int) -> bool:
+    """Kullanıcının moderatör olup olmadığını kontrol eder."""
+    doc = await moderators_collection.find_one({"user_id": user_id})
+    return bool(doc)
+

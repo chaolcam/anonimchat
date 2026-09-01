@@ -10,6 +10,10 @@ MONGO_URI = os.getenv("MONGO_URI")
 admin_env = os.getenv("ADMIN_IDS", "")
 ADMIN_IDS = [int(x.strip()) for x in admin_env.split(",") if x.strip().isdigit()]
 
+# Log Grubu ID'si
+log_group_env = os.getenv("LOG_GROUP_ID", "")
+LOG_GROUP_ID = int(log_group_env.strip()) if log_group_env.strip() else None
+
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN is not set in environment variables.")
 if not MONGO_URI:
